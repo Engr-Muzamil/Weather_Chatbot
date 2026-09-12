@@ -1,1 +1,475 @@
-
+{
+  "name": "weather_chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "62a6b739-ebfa-4549-b3f8-6cc72ed56ffa",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -464,
+        -16
+      ],
+      "webhookId": "REPLACE_WITH_YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "# ROLE\n\nYou are WeatherGPT, a weather assistant for CodeLab Tech School.\n\nEvery weather value you report must come from the OpenWeatherMap tool.\nNever guess. Never use your own knowledge for temperature, humidity,\nwind, or visibility.\n\n\n# TOOL\n\nYou have one tool: OpenWeatherMap\n\nIt returns current weather for one city: temperature, feels-like,\ncondition, humidity, wind speed, visibility, pressure.\n\nPass it the city name only.\n  Correct:  Lahore\n  Wrong:    What is the weather in Lahore?\n\nCall the tool before answering anything about weather, temperature,\nhumidity, wind, visibility, pressure, or \"is it hot / cold / raining\".\n\n\n# CITY\n\nEvery weather question needs a city.\n\nIf no city is given, ask \"Sure! Which city's weather would you like\nto check?\" and do not call the tool.\n\nIf a city was mentioned earlier, reuse it.\nUser: \"My city is Lahore.\"  Later: \"Is it hot today?\"  -> Lahore.\n\n\n# NOT SUPPORTED\n\nYou only have current weather. You cannot provide forecast, tomorrow's\nweather, weekly weather, AQI, pollution, sunrise, sunset, moon info,\nor weather alerts.\n\nIf asked, reply: \"I can only provide current weather information.\"\nNever estimate.\n\n\n# ADVICE RULES\n\nRead the exact temperature the tool returned. Then:\n\n  35.0 or higher    -> Stay hydrated. Wear light clothing.\n                       Avoid direct sunlight.\n  10.0 or lower     -> Wear warm clothing. Limit time outdoors.\n  Condition is rain -> Carry an umbrella.\n  Anything else     -> One short practical line about the day.\n\nCompare the exact number. 34.9 is not 35 or higher.\n\n\n# FIELDS\n\nReturn exactly these four fields. Nothing else.\n\ncity\n  The city name only. Use null if no weather was fetched.\n\ntemperature\n  The exact number from the tool. No units. No rounding.\n  Use null if no weather was fetched.\n\ncondition\n  The weather condition from the tool.\n  Use null if no weather was fetched.\n\nmessage\n  The complete answer for the user. This field is always filled.\n\n  When you have weather data, use this layout:\n\n  🌤 Weather Report\n\n  📍 City: {city}\n  🌡  🌡 Temperature: {temp}°C\n  🤒 Feels Like: {feels_like}°C\n  ☁ Condition: {condition}\n  💧 Humidity: {humidity}%\n  🌬 Wind Speed: {wind} m/s\n  👁 Visibility: {visibility divided by 1000} km\n\n  💡 Recommendation: {advice}\n\n  The tool returns visibility in metres - divide by 1000 for km.\n  Omit any line the tool did not return. Never print a blank or \"N/A\".\n\n  When you have no weather data (asking for a city, or refusing an\n  unsupported request), put that short reply here instead. Do not use\n  the layout.\n\n\n# LANGUAGE\n\nReply in the same language the user used (English, Urdu, Roman Urdu).\nFriendly, professional, concise."
+        }
+      },
+      "id": "a8dfeeaf-21a7-4fa6-b438-ac4f4db189ff",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -256,
+        -16
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "4dfeeaac-ae1c-4286-b301-f8cdadc021c2",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        -144,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "cityName": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('cityName', 'The name of the city to get the current weather for, e.g. Lahore') }}"
+      },
+      "id": "44d4c626-2e10-4648-8c35-cd3882a73a25",
+      "name": "OpenWeatherMap",
+      "type": "n8n-nodes-base.openWeatherMapTool",
+      "typeVersion": 1,
+      "position": [
+        48,
+        288
+      ],
+      "credentials": {
+        "openWeatherMapApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "OpenWeatherMap account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        224
+      ],
+      "id": "f9809570-5a24-4eea-820f-6324542b0867",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI Agent ka output lo\nlet raw = $input.first().json.output;\n\nlet data;\n\nif (typeof raw === 'string') {\n  // model kabhi kabhi ```json laga deta hai\n  raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();\n  try {\n    data = JSON.parse(raw);\n  } catch (e) {\n    throw new Error('Model ne sahi JSON nahi bheja. Mila: ' + raw.slice(0, 200));\n  }\n} else {\n  data = raw;          // pehle se object hai, parse mat karo\n}\n\nreturn [{\n  json: {\n    city: data.city ?? null,\n    temperature: data.temperature ?? null,\n    condition: data.condition ?? null,\n    message: data.message ?? '',\n    output: data.message ?? ''      // chat window ke liye\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        -16
+      ],
+      "id": "03921c2a-1fb4-40d5-bc8c-ff8afba88e5e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a smart weather assistant. Analyze the given weather information.\n\nIf the temperature is 30°C or above, generate a user-friendly heat warning message.\n\nYour response must include:\n\n1. Current temperature status:\n- Mention that the weather is hot.\n- Clearly mention the temperature value.\n\n2. Health and safety recommendations:\n- Advise the user to drink more water.\n- Recommend avoiding direct sunlight, especially during peak afternoon hours.\n- Suggest wearing light and breathable clothes.\n- Recommend using sunscreen if going outside.\n- Suggest staying in a cool place and using fans or air conditioning if available.\n- Warn users to avoid unnecessary outdoor activities in extreme heat.\n\n3. Make the message:\n- Friendly and easy to understand.\n- Not too long.\n- Use emojis where appropriate.\n- Provide practical advice.\n\nOutput format:\n\n🌡️ Weather Alert:\nTemperature: {{ $json.temperature }}\nCondition: {{ $json.condition }}\nCity: {{ $json.city }}\n⚠️ Status:\nHot Weather Alert\n\n💡 Recommendations:\n- Recommendation 1\n- Recommendation 2\n- Recommendation 3\n\nStay safe and stay hydrated!",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        496,
+        16
+      ],
+      "id": "3e93cf84-b207-4034-84a0-95a2f8a5a5eb",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        496,
+        160
+      ],
+      "id": "231254f0-44e4-4fd0-a67b-e3825d1bf16d",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.temperature }}",
+                    "rightValue": 35,
+                    "operator": {
+                      "type": "number",
+                      "operation": "gt"
+                    },
+                    "id": "989da1f6-da66-4200-9642-d90d8c8e630d"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4ce8b3ac-b2c0-43e1-b497-eed41380a02e",
+                    "leftValue": "={{ $json.temperature }}",
+                    "rightValue": 35,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d4acf0a4-634a-424f-9a70-b13999bebab2",
+                    "leftValue": "={{ $json.temperature }}",
+                    "rightValue": 30,
+                    "operator": {
+                      "type": "number",
+                      "operation": "lt"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        272,
+        272
+      ],
+      "id": "6ca82845-6908-4d48-96d7-6ff0005efba9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SLACK_CHANNEL_ID",
+          "mode": "list",
+          "cachedResultName": "your-channel"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.5,
+      "position": [
+        848,
+        0
+      ],
+      "id": "ecd98f1c-8ace-4f55-a14e-92bd2dbe0738",
+      "name": "Send a message",
+      "webhookId": "REPLACE_WITH_YOUR_WEBHOOK_ID",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Slack OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "You are a weather assistant. Analyze the temperature.\n\nIf temperature is between 30°C and 35°C:\nSend a short email mentioning:\n- Current temperature\n- Hot weather status\n- One simple tip (stay hydrated).\n\nIf temperature is above 35°C:\nSend a heat alert with:\n- Temperature\n- Hot weather warning\n- 2-3 safety tips.\n\nKeep the response very short, clear, and friendly.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        640,
+        224
+      ],
+      "id": "7415e937-3e6f-4841-9609-c7db0e349d5d",
+      "name": "Basic LLM Chain1"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        768,
+        432
+      ],
+      "id": "9f00b26d-5c66-4c51-9383-646421071649",
+      "name": "Groq Chat Model2",
+      "credentials": {
+        "groqApi": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_WITH_YOUR_EMAIL@example.com",
+        "subject": "=Hye ",
+        "emailType": "text",
+        "message": "Hye today weather is given as ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        944,
+        224
+      ],
+      "id": "7c7d06f8-57af-40a1-a9c0-03cd7b93bd73",
+      "name": "Send a message1",
+      "webhookId": "REPLACE_WITH_YOUR_WEBHOOK_ID",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_WITH_YOUR_EMAIL@example.com",
+        "subject": "Hello today weather is ",
+        "message": "={{ $('Code in JavaScript').item.json.message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        496,
+        448
+      ],
+      "id": "befb9cfc-4df8-4bca-b155-378f08ebb332",
+      "name": "Send a message2",
+      "webhookId": "REPLACE_WITH_YOUR_WEBHOOK_ID",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenWeatherMap": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "tags": []
+}
